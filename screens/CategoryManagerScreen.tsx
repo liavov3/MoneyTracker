@@ -1,32 +1,62 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, FlatList } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, FlatList, ToastAndroid, Platform, Alert } from "react-native";
 import useExpensesStore from "../store/useExpensesStore";
 
 /**
- * Category Manager:
- * - Displays existing categories
- * - Adds new category with a name and auto/random color
+ * Utility to generate random hex color for new categories.
  */
 const randomHex = () =>
   "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
 
+/**
+ * CategoryManagerScreen:
+ * - Lists all categories
+ * - Allows adding new category to SQLite
+ * - Shows toast feedback on success
+ */
 const CategoryManagerScreen: React.FC = () => {
-  const { categories, addCategory } = useExpensesStore();
+  const { categories, addCategory, loadInitialData } = useExpensesStore();
+
   const [name, setName] = useState<string>("");
   const [color, setColor] = useState<string>(randomHex());
+  const [loading, setLoading] = useState<boolean>(false);
 
   const canAdd = useMemo(() => name.trim().length >= 2, [name]);
 
+  /**
+   * Adds a new category:
+   * - Saves to DB
+   * - Refreshes categories
+   * - Clears form
+   * - Shows success toast
+   */
   const handleAdd = async () => {
     if (!canAdd) return;
-    await addCategory({ name: name.trim(), color });
-    setName("");
-    setColor(randomHex());
+    try {
+      setLoading(true);
+      await addCategory({ name: name.trim(), color });
+      // Refresh categories from DB
+      await loadInitialData();
+      // Clear inputs
+      setName("");
+      setColor(randomHex());
+      // Show success feedback
+      if (Platform.OS === "android") {
+        ToastAndroid.show("Category added!", ToastAndroid.SHORT);
+      } else {
+        Alert.alert("Success", "Category added successfully!");
+      }
+    } catch (err) {
+      console.error("Failed to add category:", err);
+      Alert.alert("Error", "Failed to add category. Check console for details.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <View style={{ flex: 1, padding: 12 }}>
-      {/* Add form */}
+      {/* Add Category Section */}
       <View
         style={{
           backgroundColor: "#1E1E1E",
@@ -37,11 +67,15 @@ const CategoryManagerScreen: React.FC = () => {
           marginBottom: 12,
         }}
       >
-        <Text style={{ color: "#FFFFFF", fontWeight: "700", marginBottom: 8 }}>Add Category</Text>
-        <Text style={{ color: "#9E9E9E", marginBottom: 8 }}>
-          Choose a short, descriptive name and a color for charts.
+        <Text style={{ color: "#FFFFFF", fontWeight: "700", marginBottom: 8 }}>
+          Add Category
         </Text>
 
+        <Text style={{ color: "#9E9E9E", marginBottom: 8 }}>
+          Enter a short name and color for this category.
+        </Text>
+
+        {/* Name input */}
         <Text style={{ color: "#FFFFFF", marginBottom: 6 }}>Name</Text>
         <TextInput
           placeholder="e.g. Groceries"
@@ -60,6 +94,7 @@ const CategoryManagerScreen: React.FC = () => {
           }}
         />
 
+        {/* Color input */}
         <Text style={{ color: "#FFFFFF", marginBottom: 6 }}>Color</Text>
         <View
           style={{
@@ -109,21 +144,24 @@ const CategoryManagerScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
+        {/* Add button */}
         <TouchableOpacity
           onPress={handleAdd}
-          disabled={!canAdd}
+          disabled={!canAdd || loading}
           style={{
-            backgroundColor: canAdd ? "#00BFA6" : "#3A3A3A",
+            backgroundColor: canAdd && !loading ? "#00BFA6" : "#3A3A3A",
             paddingVertical: 14,
             borderRadius: 12,
             alignItems: "center",
           }}
         >
-          <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>Add</Text>
+          <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>
+            {loading ? "Adding..." : "Add"}
+          </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Existing categories */}
+      {/* Existing Categories */}
       <View
         style={{
           backgroundColor: "#1E1E1E",
@@ -165,7 +203,9 @@ const CategoryManagerScreen: React.FC = () => {
                     borderColor: "#2A2A2A",
                   }}
                 />
-                <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>{item.name}</Text>
+                <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>
+                  {item.name}
+                </Text>
               </View>
               <Text style={{ color: "#9E9E9E" }}>{item.color}</Text>
             </View>

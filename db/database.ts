@@ -1,152 +1,91 @@
 import * as SQLite from "expo-sqlite";
 
 /**
- * Singleton DB instance accessor to prevent opening multiple connections.
+ * Create or open the local database.
+ * Works in Expo Go (no native linking needed).
  */
-let db: SQLite.WebSQLDatabase | null = null;
+const db = SQLite.openDatabaseSync("money_saver.db");
 
 /**
- * Returns a ready-to-use SQLite database instance.
- */
-export const getDB = (): SQLite.WebSQLDatabase => {
-  if (!db) {
-    db = SQLite.openDatabase("money_saver.db");
-  }
-  return db;
-};
-
-const DEFAULT_CATEGORIES = [
-  { name: "Food", color: "#FF6B6B" },
-  { name: "Transport", color: "#4D96FF" },
-  { name: "Shopping", color: "#F2C94C" },
-  { name: "Bills", color: "#9B51E0" },
-  { name: "Entertainment", color: "#00BFA6" },
-  { name: "Other", color: "#6C63FF" },
-];
-
-/**
- * Creates required tables (if they don't exist) and seeds default categories.
- * - categories(id, name, color)
- * - expenses(id, amount, category_id, date, notes)
+ * Initialize the DB tables and seed defaults.
  */
 export const initializeDatabase = async (): Promise<void> => {
-  const database = getDB();
+  console.log("Initializing SQLite database...");
 
-  await runAsync(database, `
-    PRAGMA foreign_keys = ON;
-  `);
+  await db.execAsync("PRAGMA foreign_keys = ON;");
 
-  await runAsync(
-    database,
-    `CREATE TABLE IF NOT EXISTS categories (
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
       color TEXT NOT NULL
-    );`
-  );
+    );
+  `);
 
-  await runAsync(
-    database,
-    `CREATE TABLE IF NOT EXISTS expenses (
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       amount REAL NOT NULL,
       category_id INTEGER NOT NULL,
-      date TEXT NOT NULL,              -- ISO string (e.g., 2025-10-24T20:30:00.000Z)
+      date TEXT NOT NULL,
       notes TEXT,
-      FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE CASCADE
-    );`
+      FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE CASCADE
+    );
+  `);
+
+  // Seed defaults
+  const result = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM categories;"
   );
-
-  // Seed default categories if table is empty
-  const result = await getAsync(database, "SELECT COUNT(*) as count FROM categories", []);
-  const count = (result?.rows?.item(0)?.count ?? 0) as number;
-
-  if (count === 0) {
-    await runInTransaction(database, async (tx) => {
-      for (const c of DEFAULT_CATEGORIES) {
-        await runTxAsync(
-          tx,
-          "INSERT INTO categories (name, color) VALUES (?, ?);",
-          [c.name, c.color]
-        );
+  if (result?.count === 0) {
+    console.log("Seeding default categories...");
+    const defaults = [
+      { name: "Food", color: "#FF6B6B" },
+      { name: "Transport", color: "#4D96FF" },
+      { name: "Shopping", color: "#F2C94C" },
+      { name: "Bills", color: "#9B51E0" },
+      { name: "Entertainment", color: "#00BFA6" },
+      { name: "Other", color: "#6C63FF" },
+    ];
+    await db.withTransactionAsync(async () => {
+      for (const c of defaults) {
+        await db.runAsync("INSERT INTO categories (name, color) VALUES (?, ?);", [
+          c.name,
+          c.color,
+        ]);
       }
     });
+    console.log("Seeded default categories ✅");
+  }
+
+  console.log("Database ready ✅");
+};
+
+/**
+ * Executes INSERT/UPDATE/DELETE statements.
+ */
+export const runAsync = async (sql: string, params: any[] = []) => {
+  try {
+    return await db.runAsync(sql, params);
+  } catch (err) {
+    console.error("SQLite runAsync error:", err);
+    throw err;
   }
 };
 
 /**
- * Helper: Execute a query and return the SQLResultSet.
+ * Executes SELECT queries and returns all rows.
  */
-export const runAsync = (db: SQLite.WebSQLDatabase, sql: string, args: any[] = []) =>
-  new Promise<SQLite.SQLResultSet>((resolve, reject) =>
-    db.transaction((tx) =>
-      tx.executeSql(
-        sql,
-        args,
-        (_, res) => resolve(res),
-        (_, err) => {
-          reject(err);
-          return false;
-        }
-      )
-    )
-  );
+export const getAsync = async (sql: string, params: any[] = []) => {
+  try {
+    return await db.getAllAsync(sql, params);
+  } catch (err) {
+    console.error("SQLite getAsync error:", err);
+    throw err;
+  }
+};
 
 /**
- * Helper: Execute a single select and return result set (first call).
+ * Expose the shared DB for direct access.
  */
-export const getAsync = (db: SQLite.WebSQLDatabase, sql: string, args: any[] = []) =>
-  new Promise<SQLite.SQLResultSet>((resolve, reject) =>
-    db.readTransaction((tx) =>
-      tx.executeSql(
-        sql,
-        args,
-        (_, res) => resolve(res),
-        (_, err) => {
-          reject(err);
-          return false;
-        }
-      )
-    )
-  );
-
-/**
- * Helper: Run multiple statements inside a single transaction.
- */
-export const runInTransaction = (
-  database: SQLite.WebSQLDatabase,
-  runner: (tx: SQLite.SQLTransaction) => Promise<void>
-) =>
-  new Promise<void>((resolve, reject) => {
-    database.transaction(
-      async (tx) => {
-        try {
-          await runner(tx);
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      },
-      (err) => reject(err)
-    );
-  });
-
-/**
- * Helper: Execute SQL inside an existing transaction.
- */
-export const runTxAsync = (
-  tx: SQLite.SQLTransaction,
-  sql: string,
-  args: any[] = []
-): Promise<SQLite.SQLResultSet> =>
-  new Promise<SQLite.SQLResultSet>((resolve, reject) =>
-    tx.executeSql(
-      sql,
-      args,
-      (_, res) => resolve(res),
-      (_, err) => {
-        reject(err);
-        return false;
-      }
-    )
-  );
+export { db };

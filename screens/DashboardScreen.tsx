@@ -145,7 +145,8 @@ const DashboardScreen: React.FC = () => {
             fromZero
             withInnerLines={false}
             chartConfig={chartConf}
-            backgroundColor={"transparent"}
+            yAxisLabel=""       // <-- added
+            yAxisSuffix=""      // <-- added
             data={{
               labels: ["This", "Last"],
               datasets: [{ data: [thisMonthSum, lastMonthSum] }],
