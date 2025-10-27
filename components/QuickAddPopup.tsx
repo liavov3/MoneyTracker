@@ -20,7 +20,7 @@ export interface QuickAddPopupProps {
   /** Category list (from SQLite via your store) */
   categories: Category[];
   /** Called when user taps a category to save */
-  onSelectCategory: (category: Category) => void;
+  onSelectCategory: (category: Category) => void | Promise<void>; // ✅
   /** Called when the popup should close (backdrop tap / back press) */
   onClose: () => void;
 }

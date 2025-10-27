@@ -1,6 +1,11 @@
-// screens/DashboardScreen.tsx
 import React, { useMemo, useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, Dimensions } from "react-native";
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  useWindowDimensions,
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { RootStackParamList } from "../App";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -13,207 +18,241 @@ type Nav = NativeStackNavigationProp<RootStackParamList, "Dashboard">;
 
 const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
-  const { categories, expenses, thisMonthTotals, lastMonthTotals, addExpense } = useExpensesStore();
+  const { categories, expenses, addExpense } = useExpensesStore();
+  const { width } = useWindowDimensions();
 
-  // Bottom quick-add popup state
-  const [quickAddVisible, setQuickAddVisible] = useState<boolean>(false);
-  const [detectedAmount, setDetectedAmount] = useState<number>(0);
+  // Quick add popup
+  const [quickAddVisible, setQuickAddVisible] = useState(false);
+  const [detectedAmount, setDetectedAmount] = useState(0);
 
-  // Simulate detection via button
   const simulatePayment = () => {
-    // For demo, pick a nice-looking amount. You can randomize if you prefer.
     const amt = 12.99;
     setDetectedAmount(amt);
     setQuickAddVisible(true);
   };
 
-  // Save an expense immediately when a category is chosen
-  const handleSelectCategory = async (cat: { id?: number; name: string; color: string }) => {
-    if (!cat.id) return;
+  const handleSelectCategory = async (cat: {
+    id: number;
+    name: string;
+    color: string;
+  }) => {
+    if (!cat) return;
     await addExpense({
       amount: detectedAmount,
-      categoryId: cat.id,
+      category_id: cat.id,
       date: new Date().toISOString(),
       notes: "Quick add (simulated payment)",
     });
     setQuickAddVisible(false);
   };
 
-  // Totals
-  const thisMonthSum = useMemo(
-    () => thisMonthTotals.reduce((acc, t) => acc + (t.total || 0), 0),
-    [thisMonthTotals]
-  );
-  const lastMonthSum = useMemo(
-    () => lastMonthTotals.reduce((acc, t) => acc + (t.total || 0), 0),
-    [lastMonthTotals]
-  );
+  // Filter current and previous month expenses
+  const now = new Date();
+  const thisMonthExpenses = expenses.filter((e) => {
+    const d = new Date(e.date);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+  const lastMonthExpenses = expenses.filter((e) => {
+    const d = new Date(e.date);
+    const lastMonth = new Date();
+    lastMonth.setMonth(now.getMonth() - 1);
+    return d.getMonth() === lastMonth.getMonth() && d.getFullYear() === lastMonth.getFullYear();
+  });
 
-  // Charts
-  const chartWidth = Math.min(Dimensions.get("window").width - 24, 520);
-  const chartConf = {
+  const thisMonthTotal = thisMonthExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+  const lastMonthTotal = lastMonthExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+
+  const chartWidth = Math.min(width - 24, 520);
+  const chartConfig = {
     backgroundColor: "#1E1E1E",
     backgroundGradientFrom: "#1E1E1E",
     backgroundGradientTo: "#1E1E1E",
     decimalPlaces: 2,
     color: (opacity = 1) => `rgba(255,255,255,${opacity})`,
     labelColor: () => "#BDBDBD",
-    propsForLabels: {
-      fontSize: 10,
-    },
     style: { borderRadius: 16 },
     barPercentage: 0.5,
   };
 
-  const pieData = useMemo(
-    () =>
-      thisMonthTotals
-        .filter((t) => t.total > 0)
-        .map((t) => ({
-          name: t.categoryName,
-          population: t.total,
-          color: t.color,
-          legendFontColor: "#BDBDBD",
-          legendFontSize: 12,
-        })),
-    [thisMonthTotals]
-  );
+  // Pie chart data (by category)
+  const categoryTotals = useMemo(() => {
+    return categories.map((cat) => {
+      const total = thisMonthExpenses
+        .filter((e) => e.category_id === cat.id)
+        .reduce((sum, e) => sum + e.amount, 0);
+      return { name: cat.name, color: cat.color, total };
+    });
+  }, [categories, thisMonthExpenses]);
+
+  const totalSpending = categoryTotals.reduce((acc, c) => acc + c.total, 0);
+
+  const pieData = categoryTotals
+    .filter((c) => c.total > 0)
+    .map((c) => ({
+      name: c.name,
+      population: c.total,
+      color: c.color,
+      legendFontColor: "#BDBDBD",
+      legendFontSize: 12,
+    }));
+
+  const legendItems = categoryTotals
+    .filter((c) => c.total > 0)
+    .map((c) => ({
+      name: c.name,
+      percent: ((c.total / (totalSpending || 1)) * 100).toFixed(1),
+      color: c.color,
+    }));
+
+  const isWide = width > 600;
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 120 }}>
-        {/* Header */}
+      <ScrollView
+        contentContainerStyle={{
+          padding: 12,
+          paddingBottom: 120,
+        }}
+      >
+        {/* Header row */}
         <View
           style={{
-            backgroundColor: "#0D0D0D",
-            borderRadius: 16,
-            padding: 16,
-            borderWidth: 1,
-            borderColor: "#2A2A2A",
-            marginBottom: 12,
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
+            marginBottom: 16,
           }}
         >
-          <View>
-            <Text style={{ color: "#9E9E9E" }}>Welcome back</Text>
-            <Text style={{ color: "#FFFFFF", fontSize: 20, fontWeight: "800" }}>Money Saver</Text>
-          </View>
-
-          {/* Simulate payment button */}
+          <Text
+            style={{
+              color: "#FFFFFF",
+              fontSize: 22,
+              fontWeight: "700",
+            }}
+          >
+            Money Saver
+          </Text>
           <TouchableOpacity
-            onPress={simulatePayment}
-            activeOpacity={0.85}
+            onPress={() => navigation.navigate("Categories")}
             style={{
               backgroundColor: "#6C63FF",
-              paddingVertical: 10,
-              paddingHorizontal: 14,
+              paddingVertical: 8,
+              paddingHorizontal: 16,
               borderRadius: 12,
             }}
           >
-            <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>Simulate Payment</Text>
+            <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>Manage</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Monthly summary */}
-        <View
+        {/* Spending Summary */}
+        <Text
           style={{
-            backgroundColor: "#1E1E1E",
-            borderRadius: 16,
-            padding: 16,
-            borderWidth: 1,
-            borderColor: "#2A2A2A",
-            marginBottom: 12,
+            color: "#FFFFFF",
+            fontSize: 16,
+            fontWeight: "700",
+            marginBottom: 8,
           }}
         >
-          <Text style={{ color: "#9E9E9E", marginBottom: 6 }}>This Month's Spending</Text>
-          <Text style={{ color: "#FFFFFF", fontSize: 28, fontWeight: "800" }}>
-            ${thisMonthSum.toFixed(2)}
-          </Text>
-        </View>
+          This Month vs Last Month
+        </Text>
+        <BarChart
+          data={{
+            labels: ["This Month", "Last Month"],
+            datasets: [
+              {
+                data: [thisMonthTotal || 0, lastMonthTotal || 0],
+              },
+            ],
+          }}
+          width={chartWidth}
+          height={220}
+          chartConfig={chartConfig}
+          style={{ borderRadius: 16, marginBottom: 20 }}
+          fromZero
+          showValuesOnTopOfBars
+        />
 
-        {/* Pie chart */}
-        <View
+        {/* Pie Chart */}
+        <Text
           style={{
-            backgroundColor: "#1E1E1E",
-            borderRadius: 16,
-            padding: 12,
-            borderWidth: 1,
-            borderColor: "#2A2A2A",
-            marginBottom: 12,
+            color: "#FFFFFF",
+            fontSize: 16,
+            fontWeight: "700",
+            marginBottom: 8,
           }}
         >
-          <Text style={{ color: "#FFFFFF", fontWeight: "700", marginBottom: 8 }}>This Month by Category</Text>
-          {pieData.length > 0 ? (
+          Spending by Category
+        </Text>
+
+        {pieData.length > 0 ? (
+          <>
             <PieChart
+              data={pieData}
               width={chartWidth}
               height={220}
-              data={pieData as any}
+              chartConfig={chartConfig}
               accessor="population"
               backgroundColor="transparent"
-              chartConfig={chartConf}
-              hasLegend={false}
-              paddingLeft="0"
-              center={[0, 0]}
+              paddingLeft="16"
+              absolute
             />
-          ) : (
-            <Text style={{ color: "#9E9E9E" }}>No spending yet this month.</Text>
-          )}
-        </View>
+            <View style={{ marginTop: 12 }}>
+              {legendItems.map((item, i) => (
+                <View
+                  key={i}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 6,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: 7,
+                        backgroundColor: item.color,
+                      }}
+                    />
+                    <Text style={{ color: "#FFFFFF" }}>{item.name}</Text>
+                  </View>
+                  <Text style={{ color: "#BDBDBD" }}>{item.percent}%</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : (
+          <Text style={{ color: "#9E9E9E" }}>No data yet for this month.</Text>
+        )}
 
-        {/* Bar: this vs last */}
-        <View
-          style={{
-            backgroundColor: "#1E1E1E",
-            borderRadius: 16,
-            padding: 12,
-            borderWidth: 1,
-            borderColor: "#2A2A2A",
-            marginBottom: 12,
-          }}
-        >
-          <Text style={{ color: "#FFFFFF", fontWeight: "700", marginBottom: 8 }}>
-            This Month vs Last Month
-          </Text>
-          <BarChart
-            width={chartWidth}
-            height={220}
-            fromZero
-            withInnerLines={false}
-            chartConfig={chartConf}
-            yAxisLabel=""
-            yAxisSuffix=""
-            data={{
-              labels: ["This", "Last"],
-              datasets: [{ data: [thisMonthSum, lastMonthSum] }],
+        {/* Recent Expenses */}
+        <View style={{ marginTop: 20 }}>
+          <Text
+            style={{
+              color: "#FFFFFF",
+              fontWeight: "700",
+              marginBottom: 8,
             }}
-            style={{ borderRadius: 16 }}
-          />
-        </View>
-
-        {/* Recent expenses */}
-        <View
-          style={{
-            backgroundColor: "#1E1E1E",
-            borderRadius: 16,
-            padding: 12,
-            borderWidth: 1,
-            borderColor: "#2A2A2A",
-            marginBottom: 12,
-          }}
-        >
-          <Text style={{ color: "#FFFFFF", fontWeight: "700", marginBottom: 8 }}>
+          >
             Recent Expenses
           </Text>
           {expenses.length === 0 ? (
             <Text style={{ color: "#9E9E9E" }}>No expenses yet.</Text>
           ) : (
-            expenses.slice(0, 10).map((e) => {
-              const cat = categories.find((c) => c.id === e.categoryId);
+            expenses.slice(0, 5).map((e) => {
+              const cat = categories.find((c) => c.id === e.category_id);
               return (
                 <ExpenseCard
-                  key={e.id ?? `${e.date}-${e.amount}`}
+                  key={e.id}
                   expense={e}
                   categoryName={cat?.name ?? "Unknown"}
                   accentColor={cat?.color ?? "#6C63FF"}
@@ -224,28 +263,22 @@ const DashboardScreen: React.FC = () => {
         </View>
       </ScrollView>
 
-      {/* Add Expense FAB (unchanged) */}
+      {/* Floating Button */}
       <TouchableOpacity
         onPress={() => navigation.navigate("AddExpense")}
         style={{
           position: "absolute",
-          bottom: 24,
-          right: 18,
-          width: 56,
-          height: 56,
-          borderRadius: 28,
+          right: 20,
+          bottom: 30,
           backgroundColor: "#6C63FF",
+          borderRadius: 50,
+          width: 60,
+          height: 60,
           alignItems: "center",
           justifyContent: "center",
-          elevation: 6,
-          shadowColor: "#000",
-          shadowOpacity: 0.3,
-          shadowOffset: { width: 0, height: 6 },
-          shadowRadius: 8,
         }}
-        activeOpacity={0.8}
       >
-        <Text style={{ color: "#FFFFFF", fontSize: 28, marginTop: -2 }}>＋</Text>
+        <Text style={{ color: "#FFFFFF", fontSize: 26, fontWeight: "bold" }}>+</Text>
       </TouchableOpacity>
 
       {/* Quick Add Popup */}
@@ -253,7 +286,7 @@ const DashboardScreen: React.FC = () => {
         visible={quickAddVisible}
         amount={detectedAmount}
         categories={categories}
-        onSelectCategory={handleSelectCategory}
+        onSelectCategory={handleSelectCategory as unknown as (category: any) => void}
         onClose={() => setQuickAddVisible(false)}
       />
     </View>

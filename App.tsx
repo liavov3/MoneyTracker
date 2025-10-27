@@ -1,12 +1,17 @@
 import React, { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
-import { NavigationContainer, DefaultTheme, DarkTheme } from "@react-navigation/native";
+import {
+  NavigationContainer,
+  DarkTheme,
+} from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+
 import DashboardScreen from "./screens/DashboardScreen";
 import CategoryManagerScreen from "./screens/CategoryManagerScreen";
 import AddExpenseScreen from "./screens/AddExpenseScreen";
+import EditExpenseScreen from "./screens/EditExpenseScreen"; // ✅ import added
 import { initializeDatabase } from "./db/database";
 import useExpensesStore from "./store/useExpensesStore";
 
@@ -16,7 +21,8 @@ import useExpensesStore from "./store/useExpensesStore";
 export type RootStackParamList = {
   Dashboard: undefined;
   Categories: undefined;
-  AddExpense: undefined; // This screen is presented as a modal
+  AddExpense: undefined; // modal
+  EditExpense: { expense: any }; // ✅ new route for editing
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -25,7 +31,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
  * App entry point.
  * - Initializes SQLite database.
  * - Loads categories & expenses into Zustand store.
- * - Sets up React Navigation with a dark, modern theme.
+ * - Sets up React Navigation with dark modern theme.
  */
 export default function App() {
   const loadInitialData = useExpensesStore((s) => s.loadInitialData);
@@ -73,11 +79,23 @@ export default function App() {
               component={CategoryManagerScreen}
               options={{ title: "Categories" }}
             />
-            {/* Modal presentation for Add Expense */}
             <Stack.Screen
               name="AddExpense"
               component={AddExpenseScreen}
-              options={{ title: "Add Expense", presentation: "modal" }}
+              options={{
+                title: "Add Expense",
+                presentation: "modal",
+              }}
+            />
+            {/* ✅ New EditExpense screen */}
+            <Stack.Screen
+              name="EditExpense"
+              component={EditExpenseScreen}
+              options={{
+                title: "Edit Expense",
+                presentation: "modal",
+                headerShown: false,
+              }}
             />
           </Stack.Navigator>
         </NavigationContainer>

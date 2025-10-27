@@ -1,88 +1,132 @@
 import { create } from "zustand";
-import ExpenseService, { Category, Expense, CategoryTotal } from "../services/ExpenseService";
+import { getAsync, runAsync } from "../db/database";
 
 /**
- * Utility: Returns ISO boundaries for a calendar month given a JS Date.
+ * Types
  */
-const monthBounds = (d: Date) => {
-  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0));
-  const nextMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1, 0, 0, 0));
-  return { startISO: start.toISOString(), endISO: nextMonth.toISOString() };
-};
+interface Category {
+  id: number;
+  name: string;
+  color: string;
+}
 
-type ExpensesState = {
+interface Expense {
+  id: number;
+  amount: number;
+  category_id: number;
+  date: string;
+  notes?: string;
+}
+
+interface ExpensesState {
   categories: Category[];
   expenses: Expense[];
-  isLoading: boolean;
 
-  // Derived / cached aggregates (optional for quick access)
-  thisMonthTotals: CategoryTotal[];
-  lastMonthTotals: CategoryTotal[];
-
-  // Actions
   loadInitialData: () => Promise<void>;
-  refreshAggregates: () => Promise<void>;
-  addExpense: (e: Omit<Expense, "id">) => Promise<void>;
-  addCategory: (c: Omit<Category, "id">) => Promise<void>;
-};
+  addCategory: (data: { name: string; color: string }) => Promise<void>;
+  deleteCategory: (id: number) => Promise<void>;
+  addExpense: (expense: Omit<Expense, "id">) => Promise<void>;
+  thisMonthTotals: () => Expense[];
+  lastMonthTotals: () => Expense[];
+}
 
+/**
+ * Zustand store
+ */
 const useExpensesStore = create<ExpensesState>((set, get) => ({
   categories: [],
   expenses: [],
-  isLoading: false,
-  thisMonthTotals: [],
-  lastMonthTotals: [],
 
   /**
-   * Loads categories & expenses, then calculates aggregates.
+   * Load both categories and expenses from SQLite
    */
   loadInitialData: async () => {
-    set({ isLoading: true });
     try {
-      const [categories, expenses] = await Promise.all([
-        ExpenseService.getCategories(),
-        ExpenseService.getAllExpenses(),
-      ]);
+      const categories = (await getAsync("SELECT * FROM categories ORDER BY name ASC;")) as Category[];
+      const expenses = (await getAsync("SELECT * FROM expenses ORDER BY date DESC;")) as Expense[];
+
       set({ categories, expenses });
-      await get().refreshAggregates();
-    } finally {
-      set({ isLoading: false });
+    } catch (err) {
+      console.error("Failed to load initial data:", err);
+      set({ categories: [], expenses: [] }); // ✅ Always fallback to safe defaults
     }
   },
 
   /**
-   * Refreshes the monthly aggregates for dashboard charts.
+   * Add a new category
    */
-  refreshAggregates: async () => {
+  addCategory: async ({ name, color }) => {
+    try {
+      await runAsync("INSERT INTO categories (name, color) VALUES (?, ?);", [
+        name,
+        color,
+      ]);
+      await get().loadInitialData();
+    } catch (err) {
+      console.error("Failed to add category:", err);
+      throw err;
+    }
+  },
+
+  /**
+   * Delete a category
+   */
+  deleteCategory: async (id: number) => {
+    try {
+      await runAsync("DELETE FROM categories WHERE id = ?;", [id]);
+      await get().loadInitialData();
+    } catch (err) {
+      console.error("Failed to delete category:", err);
+      throw err;
+    }
+  },
+
+  /**
+   * Add an expense
+   */
+  addExpense: async (expense) => {
+    try {
+      await runAsync(
+        "INSERT INTO expenses (amount, category_id, date, notes) VALUES (?, ?, ?, ?);",
+        [expense.amount, expense.category_id, expense.date, expense.notes || ""]
+      );
+      await get().loadInitialData();
+    } catch (err) {
+      console.error("Failed to add expense:", err);
+      throw err;
+    }
+  },
+
+  /**
+   * Get expenses for this month
+   */
+  thisMonthTotals: () => {
+    const { expenses } = get();
     const now = new Date();
-    const { startISO: thisStart, endISO: thisEnd } = monthBounds(now);
-
-    const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
-    const { startISO: lastStart, endISO: lastEnd } = monthBounds(lastMonth);
-
-    const [thisTotals, lastTotals] = await Promise.all([
-      ExpenseService.getCategoryTotals(thisStart, thisEnd),
-      ExpenseService.getCategoryTotals(lastStart, lastEnd),
-    ]);
-
-    set({ thisMonthTotals: thisTotals, lastMonthTotals: lastTotals });
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    return expenses.filter((e) => {
+      const d = new Date(e.date);
+      return d.getMonth() === month && d.getFullYear() === year;
+    });
   },
 
   /**
-   * Adds a new expense to DB and store, then refreshes aggregates.
+   * Get expenses for last month
    */
-  addExpense: async (input) => {
-    const created = await ExpenseService.addExpense(input);
-    set((s) => ({ expenses: [created, ...s.expenses] }));
-    await get().refreshAggregates();
-  },
-
-  /**
-   * Adds a new category to DB and store.
-   */
-  addCategory: async (input) => {
-    const created = await ExpenseService.addCategory(input);
-    set((s) => ({ categories: [...s.categories, created] }));
+  lastMonthTotals: () => {
+    const { expenses } = get();
+    const now = new Date();
+    let month = now.getMonth() - 1;
+    let year = now.getFullYear();
+    if (month < 0) {
+      month = 11;
+      year -= 1;
+    }
+    return expenses.filter((e) => {
+      const d = new Date(e.date);
+      return d.getMonth() === month && d.getFullYear() === year;
+    });
   },
 }));
 

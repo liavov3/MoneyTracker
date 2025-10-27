@@ -106,4 +106,71 @@ const ExpenseService = {
   },
 };
 
-export default ExpenseService;
+// ✅ Add these functions to your existing ExpenseService file
+export interface ExpenseUpdateData {
+  amount?: number;
+  categoryId?: number;
+  date?: string;
+  notes?: string;
+}
+
+/* ============================================================
+   🧾 CATEGORY FUNCTIONS
+   ============================================================ */
+
+// ✅ Get all categories
+export const getCategories = async () => {
+  try {
+    const rows = await getAsync("SELECT * FROM categories ORDER BY id ASC;");
+    return rows;
+  } catch (err) {
+    console.error("Failed to load categories:", err);
+    throw err;
+  }
+};
+
+// ✅ Add a new category
+export const addCategory = async (name: string, color: string) => {
+  try {
+    await runAsync("INSERT INTO categories (name, color) VALUES (?, ?);", [
+      name,
+      color,
+    ]);
+  } catch (err) {
+    console.error("Failed to add category:", err);
+    throw err;
+  }
+};
+
+// ✅ Delete category by ID
+export const deleteCategory = async (id: number) => {
+  try {
+    await runAsync("DELETE FROM categories WHERE id = ?;", [id]);
+  } catch (err) {
+    console.error("Failed to delete category:", err);
+    throw err;
+  }
+};
+
+/* ============================================================
+   💰 EXPENSE FUNCTIONS
+   ============================================================ */
+
+// ✅ Update existing expense
+export const updateExpense = async (
+  id: number,
+  updatedData: ExpenseUpdateData
+): Promise<void> => {
+  const { amount, categoryId, date, notes } = updatedData;
+  await runAsync(
+    `UPDATE expenses
+     SET amount = ?, category_id = ?, date = ?, notes = ?
+     WHERE id = ?;`,
+    [amount, categoryId, date, notes, id]
+  );
+};
+
+// ✅ Delete an expense by ID
+export const deleteExpense = async (id: number): Promise<void> => {
+  await runAsync(`DELETE FROM expenses WHERE id = ?;`, [id]);
+};
