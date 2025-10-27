@@ -1,39 +1,45 @@
-import React, { useMemo } from "react";
+// screens/DashboardScreen.tsx
+import React, { useMemo, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Dimensions } from "react-native";
-import { useNavigation, useTheme } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { RootStackParamList } from "../App";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import useExpensesStore from "../store/useExpensesStore";
 import ExpenseCard from "../components/ExpenseCard";
 import { PieChart, BarChart } from "react-native-chart-kit";
+import QuickAddPopup from "../components/QuickAddPopup";
 
-/**
- * Dashboard:
- * - Total spending summary (this month)
- * - Pie chart: distribution by category (this month)
- * - Bar chart: this month vs last month total
- * - Recent expenses list
- * - Floating "+" button to open Add Expense modal
- * - Header button to manage categories
- */
 type Nav = NativeStackNavigationProp<RootStackParamList, "Dashboard">;
-
-const chartWidth = Math.min(Dimensions.get("window").width - 24, 640);
-const chartConf = {
-  backgroundGradientFrom: "#1E1E1E",
-  backgroundGradientTo: "#1E1E1E",
-  decimalPlaces: 0,
-  color: (opacity = 1) => `rgba(255,255,255,${opacity})`,
-  labelColor: (opacity = 1) => `rgba(189,189,189,${opacity})`,
-  barPercentage: 0.6,
-};
 
 const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
-  const theme = useTheme();
-  const { categories, expenses, thisMonthTotals, lastMonthTotals } = useExpensesStore();
+  const { categories, expenses, thisMonthTotals, lastMonthTotals, addExpense } = useExpensesStore();
 
-  // Sum totals for "this vs last" month bar
+  // Bottom quick-add popup state
+  const [quickAddVisible, setQuickAddVisible] = useState<boolean>(false);
+  const [detectedAmount, setDetectedAmount] = useState<number>(0);
+
+  // Simulate detection via button
+  const simulatePayment = () => {
+    // For demo, pick a nice-looking amount. You can randomize if you prefer.
+    const amt = 12.99;
+    setDetectedAmount(amt);
+    setQuickAddVisible(true);
+  };
+
+  // Save an expense immediately when a category is chosen
+  const handleSelectCategory = async (cat: { id?: number; name: string; color: string }) => {
+    if (!cat.id) return;
+    await addExpense({
+      amount: detectedAmount,
+      categoryId: cat.id,
+      date: new Date().toISOString(),
+      notes: "Quick add (simulated payment)",
+    });
+    setQuickAddVisible(false);
+  };
+
+  // Totals
   const thisMonthSum = useMemo(
     () => thisMonthTotals.reduce((acc, t) => acc + (t.total || 0), 0),
     [thisMonthTotals]
@@ -43,7 +49,22 @@ const DashboardScreen: React.FC = () => {
     [lastMonthTotals]
   );
 
-  // Pie data: filter out zero slices for a clean chart
+  // Charts
+  const chartWidth = Math.min(Dimensions.get("window").width - 24, 520);
+  const chartConf = {
+    backgroundColor: "#1E1E1E",
+    backgroundGradientFrom: "#1E1E1E",
+    backgroundGradientTo: "#1E1E1E",
+    decimalPlaces: 2,
+    color: (opacity = 1) => `rgba(255,255,255,${opacity})`,
+    labelColor: () => "#BDBDBD",
+    propsForLabels: {
+      fontSize: 10,
+    },
+    style: { borderRadius: 16 },
+    barPercentage: 0.5,
+  };
+
   const pieData = useMemo(
     () =>
       thisMonthTotals
@@ -58,27 +79,44 @@ const DashboardScreen: React.FC = () => {
     [thisMonthTotals]
   );
 
-  // Map recent expenses with category names
-  const recent = useMemo(() => expenses.slice(0, 8), [expenses]);
-  const categoryMap = useMemo(
-    () => new Map(categories.map((c) => [c.id!, c])),
-    [categories]
-  );
-
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.navigate("Categories")} hitSlop={12}>
-          <Text style={{ color: theme.colors.primary, fontWeight: "600" }}>Manage</Text>
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
-
   return (
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 120 }}>
-        {/* Total summary */}
+        {/* Header */}
+        <View
+          style={{
+            backgroundColor: "#0D0D0D",
+            borderRadius: 16,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: "#2A2A2A",
+            marginBottom: 12,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <View>
+            <Text style={{ color: "#9E9E9E" }}>Welcome back</Text>
+            <Text style={{ color: "#FFFFFF", fontSize: 20, fontWeight: "800" }}>Money Saver</Text>
+          </View>
+
+          {/* Simulate payment button */}
+          <TouchableOpacity
+            onPress={simulatePayment}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: "#6C63FF",
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              borderRadius: 12,
+            }}
+          >
+            <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>Simulate Payment</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Monthly summary */}
         <View
           style={{
             backgroundColor: "#1E1E1E",
@@ -95,7 +133,7 @@ const DashboardScreen: React.FC = () => {
           </Text>
         </View>
 
-        {/* Pie Chart: Category distribution */}
+        {/* Pie chart */}
         <View
           style={{
             backgroundColor: "#1E1E1E",
@@ -106,26 +144,25 @@ const DashboardScreen: React.FC = () => {
             marginBottom: 12,
           }}
         >
-          <Text style={{ color: "#FFFFFF", fontWeight: "700", marginBottom: 8 }}>
-            Spending by Category
-          </Text>
+          <Text style={{ color: "#FFFFFF", fontWeight: "700", marginBottom: 8 }}>This Month by Category</Text>
           {pieData.length > 0 ? (
             <PieChart
-              data={pieData}
               width={chartWidth}
               height={220}
-              accessor={"population"}
+              data={pieData as any}
+              accessor="population"
+              backgroundColor="transparent"
               chartConfig={chartConf}
-              paddingLeft={"8"}
-              absolute
-              backgroundColor={"transparent"}
+              hasLegend={false}
+              paddingLeft="0"
+              center={[0, 0]}
             />
           ) : (
             <Text style={{ color: "#9E9E9E" }}>No spending yet this month.</Text>
           )}
         </View>
 
-        {/* Bar Chart: This vs Last Month */}
+        {/* Bar: this vs last */}
         <View
           style={{
             backgroundColor: "#1E1E1E",
@@ -145,17 +182,17 @@ const DashboardScreen: React.FC = () => {
             fromZero
             withInnerLines={false}
             chartConfig={chartConf}
-            yAxisLabel=""       // <-- added
-            yAxisSuffix=""      // <-- added
+            yAxisLabel=""
+            yAxisSuffix=""
             data={{
               labels: ["This", "Last"],
               datasets: [{ data: [thisMonthSum, lastMonthSum] }],
             }}
-            style={{ borderRadius: 12 }}
+            style={{ borderRadius: 16 }}
           />
         </View>
 
-        {/* Recent expenses list */}
+        {/* Recent expenses */}
         <View
           style={{
             backgroundColor: "#1E1E1E",
@@ -169,35 +206,38 @@ const DashboardScreen: React.FC = () => {
           <Text style={{ color: "#FFFFFF", fontWeight: "700", marginBottom: 8 }}>
             Recent Expenses
           </Text>
-          {recent.length === 0 ? (
-            <Text style={{ color: "#9E9E9E" }}>No expenses recorded yet.</Text>
+          {expenses.length === 0 ? (
+            <Text style={{ color: "#9E9E9E" }}>No expenses yet.</Text>
           ) : (
-            recent.map((e) => (
-              <ExpenseCard
-                key={e.id}
-                expense={e}
-                categoryName={categoryMap.get(e.categoryId)?.name ?? "Unknown"}
-                accentColor={categoryMap.get(e.categoryId)?.color ?? "#6C63FF"}
-              />
-            ))
+            expenses.slice(0, 10).map((e) => {
+              const cat = categories.find((c) => c.id === e.categoryId);
+              return (
+                <ExpenseCard
+                  key={e.id ?? `${e.date}-${e.amount}`}
+                  expense={e}
+                  categoryName={cat?.name ?? "Unknown"}
+                  accentColor={cat?.color ?? "#6C63FF"}
+                />
+              );
+            })
           )}
         </View>
       </ScrollView>
 
-      {/* Floating action button: Add Expense */}
+      {/* Add Expense FAB (unchanged) */}
       <TouchableOpacity
         onPress={() => navigation.navigate("AddExpense")}
         style={{
           position: "absolute",
-          right: 16,
           bottom: 24,
-          backgroundColor: "#6C63FF",
+          right: 18,
           width: 56,
           height: 56,
           borderRadius: 28,
+          backgroundColor: "#6C63FF",
           alignItems: "center",
           justifyContent: "center",
-          elevation: 4,
+          elevation: 6,
           shadowColor: "#000",
           shadowOpacity: 0.3,
           shadowOffset: { width: 0, height: 6 },
@@ -207,6 +247,15 @@ const DashboardScreen: React.FC = () => {
       >
         <Text style={{ color: "#FFFFFF", fontSize: 28, marginTop: -2 }}>＋</Text>
       </TouchableOpacity>
+
+      {/* Quick Add Popup */}
+      <QuickAddPopup
+        visible={quickAddVisible}
+        amount={detectedAmount}
+        categories={categories}
+        onSelectCategory={handleSelectCategory}
+        onClose={() => setQuickAddVisible(false)}
+      />
     </View>
   );
 };
